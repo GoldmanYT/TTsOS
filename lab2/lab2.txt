@@ -1,0 +1,332 @@
+% Задание характеристик
+Fd = 2000;  % частота дискретизации
+Fd2 = Fd / 2;  % частота Найквиста
+Fp = [400, 600];  % границы полосы пропускания
+Fs = [300, 700];  % границы полосы непропускания
+Rp = 0.2;  % неравномерность в полосе пропускания
+Rs = 45;  % затухание в полосе задерживания
+
+Wp = Fp / Fd2
+Ws = Fs / Fd2
+
+f = [Fs(1) Fp(1) Fp(2) Fs(2)];  % вектор частот
+a = [0 1 0];  % АЧХ: стоп, пасс, стоп
+dev = [10^(-Rs/20) 10^(-Rp/20) 10^(-Rs/20)];  % допустимые отклонения (ИСПРАВЛЕНО: второй элемент для Rp)
+
+% Оценка порядка фильтра
+[n, Wn, beta, ftype] = kaiserord(f, a, dev, Fd);
+n  % порядок фильтра
+
+% Проектирование фильтра
+cheb_window = chebwin(n+1, Rs);
+
+b = fir1(n, Wn, cheb_window, 'noscale');
+fprintf('b = [%.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, %.4f, ...]\n', b(1:11))
+
+% Анализ характеристик фильтра
+[H, w] = freqz(b, 1, 2048);
+f = w / pi * Fd2;
+
+% АЧХ
+mag = abs(H);
+mag_dB = 20 * log10(mag);
+
+% График АЧХ
+figure(1);
+subplot(2,1,1);
+plot(f, mag, 'b', 'LineWidth', 1.5);
+grid on; title('АЧХ (линейный масштаб)');
+xlabel('Частота (Гц)'); ylabel('|H(f)|');
+xlim([0, Fd2]); ylim([0, 1.1]);
+line([Fp(1) Fp(1)], [0 1.1], 'Color', 'g', 'LineStyle', '--');
+line([Fp(2) Fp(2)], [0 1.1], 'Color', 'g', 'LineStyle', '--');
+line([Fs(1) Fs(1)], [0 1.1], 'Color', 'r', 'LineStyle', '--');
+line([Fs(2) Fs(2)], [0 1.1], 'Color', 'r', 'LineStyle', '--');
+legend('АЧХ', 'Границы полосы пропускания', 'Границы полосы непропускания');
+
+% График ЛАЧХ
+subplot(2,1,2);
+plot(f, mag_dB, 'b', 'LineWidth', 1.5);
+grid on; title('ЛАЧХ (логарифмический масштаб)');
+xlabel('Частота (Гц)'); ylabel('|H(f)| (дБ)');
+xlim([0, Fd2]); ylim([-80, 5]);
+line([Fp(1) Fp(1)], [-80 5], 'Color', 'g', 'LineStyle', '--');
+line([Fp(2) Fp(2)], [-80 5], 'Color', 'g', 'LineStyle', '--');
+line([Fs(1) Fs(1)], [-80 5], 'Color', 'r', 'LineStyle', '--');
+line([Fs(2) Fs(2)], [-80 5], 'Color', 'r', 'LineStyle', '--');
+line([0 Fd2], [-Rp -Rp], 'Color', 'm', 'LineStyle', ':'); % Допуск в полосе пропускания
+line([0 Fd2], [-Rs -Rs], 'Color', 'k', 'LineStyle', ':'); % Допуск в полосе непропускания
+legend('ЛАЧХ', '', '', '', 'Rp = -0.2 дБ', 'Rs = -45 дБ');
+
+% ФЧХ
+phase = unwrap(angle(H));
+
+% График ФЧХ
+figure(2);
+subplot(2,1,1);
+plot(f, phase, 'r', 'LineWidth', 1.5);
+grid on; title('Фазо-частотная характеристика (ФЧХ)');
+xlabel('Частота (Гц)'); ylabel('Фаза (рад)');
+xlim([0, Fd2]);
+
+% Групповая задержка
+[gd, w_gd] = grpdelay(b, 1, 2048);
+f_gd = w_gd / pi * Fd2;
+
+% График групповой задержки
+subplot(2,1,2);
+plot(f_gd, gd, 'r', 'LineWidth', 1.5);
+grid on; title('Характеристика групповой задержки');
+xlabel('Частота (Гц)'); ylabel('Задержка (отсчеты)');
+xlim([0, Fd2]);
+
+% Импульсная характеристика (Impulse Response)
+[h_imp, t_imp] = impz(b, 1, 100); % 100 отсчетов
+
+% График импульсной характеристики
+figure(3);
+subplot(2,1,1);
+stem(t_imp, h_imp, 'filled', 'MarkerSize', 3);
+grid on; title('Импульсная характеристика (h(n))');
+xlabel('Отсчеты (n)'); ylabel('Амплитуда');
+xlim([0, 50]);
+
+% Временная характеристика (реакция на единичный ступенчатый сигнал)
+N_samples = 100;
+x_step = ones(1, N_samples);
+y_step = filter(b, 1, x_step);
+t_step = 0:N_samples-1;
+
+% График временной характеристики
+subplot(2,1,2);
+stairs(t_step, y_step, 'LineWidth', 1.5);
+grid on;
+title('Временная характеристика (реакция на единичный ступенчатый сигнал)');
+xlabel('Отсчеты (n)');
+ylabel('Амплитуда');
+
+%% ==================== ДОПОЛНЕННАЯ ЧАСТЬ ====================
+
+% 1. Реакция на синусоидальный сигнал из полосы пропускания (500 Гц)
+figure(4);
+N_sin = 200;
+nn = 0:N_sin-1;
+
+% Синусоида в полосе пропускания
+f_pass = 500;
+x_sin_pass = sin(2 * pi * f_pass / Fd * nn);
+y_sin_pass = filter(b, 1, x_sin_pass);
+
+subplot(2,1,1);
+plot(nn, x_sin_pass, 'b', nn, y_sin_pass, 'r', 'LineWidth', 1);
+grid on;
+title('Реакция на синусоиду в ПОЛОСЕ ПРОПУСКАНИЯ (500 Гц)');
+xlabel('Отсчеты (n)'); ylabel('Амплитуда');
+legend('Входной сигнал', 'Выходной сигнал');
+
+% Синусоида в полосе непропускания (800 Гц)
+f_stop = 800;
+x_sin_stop = sin(2 * pi * f_stop / Fd * nn);
+y_sin_stop = filter(b, 1, x_sin_stop);
+
+subplot(2,1,2);
+plot(nn, x_sin_stop, 'b', nn, y_sin_stop, 'r', 'LineWidth', 1);
+grid on;
+title('Реакция на синусоиду в ПОЛОСЕ НЕПРОПУСКАНИЯ (800 Гц)');
+xlabel('Отсчеты (n)'); ylabel('Амплитуда');
+legend('Входной сигнал', 'Выходной сигнал');
+
+%% ==================== ПРОГРАММНАЯ РЕАЛИЗАЦИЯ ФИЛЬТРА ====================
+
+% 2.1. Прямая форма (Direct Form)
+function y = direct_form(x, b)
+    persistent buf
+    if isempty(buf)
+        buf = zeros(1, length(b));
+    end
+    y = 0;
+    for i = 1:length(b)
+        y = y + b(i) * buf(i);
+    end
+    buf = [x, buf(1:end-1)];
+end
+
+% 2.2. Каноническая форма (для КИХ совпадает с прямой)
+function y = canonical_form(x, b)
+    persistent buf
+    if isempty(buf)
+        buf = zeros(1, length(b));
+    end
+    y = 0;
+    for i = 1:length(b)
+        y = y + b(i) * buf(i);
+    end
+    buf = [x, buf(1:end-1)];
+end
+
+% 2.3. Последовательная форма (каскад секций 2-го порядка)
+function y = serial_form(x, sos, g)
+    persistent bufs
+    n_sections = size(sos, 1);
+    if isempty(bufs)
+        bufs = zeros(n_sections, 2);
+    end
+    w = g * x;
+    for i = 1:n_sections
+        b0 = sos(i,1); b1 = sos(i,2); b2 = sos(i,3);
+        a1 = sos(i,5); a2 = sos(i,6);
+        
+        y_sec = b0 * w + b1 * bufs(i,1) + b2 * bufs(i,2) - a1 * bufs(i,1) - a2 * bufs(i,2);
+        bufs(i,2) = bufs(i,1);
+        bufs(i,1) = y_sec;
+        w = y_sec;
+    end
+    y = w;
+end
+
+% 2.4. Параллельная форма
+function y = parallel_form(x, Bi, Ai, k)
+    persistent bufp
+    n_sections = size(Bi, 1);
+    if isempty(bufp)
+        bufp = zeros(n_sections, 2);
+    end
+    y = k * x;
+    for i = 1:n_sections
+        b0 = Bi(i,1); b1 = Bi(i,2);
+        a1 = Ai(i,2); a2 = Ai(i,3);
+        
+        y_sec = b0 * x + b1 * bufp(i,1) - a1 * bufp(i,1) - a2 * bufp(i,2);
+        bufp(i,2) = bufp(i,1);
+        bufp(i,1) = y_sec;
+        y = y + y_sec;
+    end
+end
+
+% Получение коэффициентов для последовательной формы
+[sos, g] = tf2sos(b, 1);
+
+% Получение коэффициентов для параллельной формы
+[r, p, k_par] = residuez(b, 1);
+Bi = [];
+Ai = [];
+i = 1;
+while i <= length(r)
+    if abs(imag(p(i))) > 1e-10  % комплексно-сопряженная пара
+        b_sec = [real(r(i)+r(i+1)), -2*real(r(i)*conj(p(i)))];
+        a_sec = [1, -2*real(p(i)), abs(p(i))^2];
+        Bi = [Bi; b_sec];
+        Ai = [Ai; a_sec];
+        i = i + 2;
+    else  % действительный полюс
+        Bi = [Bi; [real(r(i)), 0]];
+        Ai = [Ai; [1, -real(p(i)), 0]];
+        i = i + 1;
+    end
+end
+
+% Тестовые сигналы для программной реализации
+N_test = 100;
+impulse_test = zeros(1, N_test);
+impulse_test(1) = 1;
+step_test = ones(1, N_test);
+sin_pass_test = sin(2 * pi * 500 / Fd * (0:N_test-1));
+sin_stop_test = sin(2 * pi * 800 / Fd * (0:N_test-1));
+
+% Инициализация буферов через вызов функций (очистка persistent)
+clear direct_form canonical_form serial_form parallel_form
+
+% Вычисление реакций для всех форм
+% Прямая форма
+y_imp_dir = zeros(1, N_test);
+y_step_dir = zeros(1, N_test);
+y_pass_dir = zeros(1, N_test);
+y_stop_dir = zeros(1, N_test);
+for i = 1:N_test
+    y_imp_dir(i) = direct_form(impulse_test(i), b);
+end
+clear direct_form
+for i = 1:N_test
+    y_step_dir(i) = direct_form(step_test(i), b);
+end
+clear direct_form
+for i = 1:N_test
+    y_pass_dir(i) = direct_form(sin_pass_test(i), b);
+end
+clear direct_form
+for i = 1:N_test
+    y_stop_dir(i) = direct_form(sin_stop_test(i), b);
+end
+
+% Каноническая форма
+y_imp_can = zeros(1, N_test);
+for i = 1:N_test
+    y_imp_can(i) = canonical_form(impulse_test(i), b);
+end
+
+% Последовательная форма
+y_imp_ser = zeros(1, N_test);
+for i = 1:N_test
+    y_imp_ser(i) = serial_form(impulse_test(i), sos, g);
+end
+
+% Параллельная форма
+y_imp_par = zeros(1, N_test);
+for i = 1:N_test
+    y_imp_par(i) = parallel_form(impulse_test(i), Bi, Ai, k_par);
+end
+
+% График сравнения импульсных характеристик всех форм
+figure(5);
+subplot(2,2,1);
+stem(0:N_test-1, y_imp_dir, 'b', 'MarkerSize', 3);
+grid on; title('Прямая форма');
+xlabel('n'); ylabel('h(n)');
+
+subplot(2,2,2);
+stem(0:N_test-1, y_imp_can, 'r', 'MarkerSize', 3);
+grid on; title('Каноническая форма');
+xlabel('n'); ylabel('h(n)');
+
+subplot(2,2,3);
+stem(0:N_test-1, y_imp_ser, 'g', 'MarkerSize', 3);
+grid on; title('Последовательная форма');
+xlabel('n'); ylabel('h(n)');
+
+subplot(2,2,4);
+stem(0:N_test-1, y_imp_par, 'm', 'MarkerSize', 3);
+grid on; title('Параллельная форма');
+xlabel('n'); ylabel('h(n)');
+
+sgtitle('Сравнение импульсных характеристик (реакция на единичный импульс)');
+
+% График реакции на ступенчатый сигнал (прямая форма)
+figure(6);
+stairs(0:N_test-1, y_step_dir, 'b', 'LineWidth', 1.5);
+grid on;
+title('Реакция на единичный ступенчатый сигнал (прямая форма)');
+xlabel('n'); ylabel('s(n)');
+
+% График реакции на синусоиду в полосе пропускания (прямая форма)
+figure(7);
+subplot(2,1,1);
+plot(0:N_test-1, sin_pass_test, 'b', 0:N_test-1, y_pass_dir, 'r', 'LineWidth', 1);
+grid on;
+title('Реакция на синусоиду в ПОЛОСЕ ПРОПУСКАНИЯ (500 Гц) - прямая форма');
+xlabel('n'); ylabel('Амплитуда');
+legend('Вход', 'Выход');
+
+subplot(2,1,2);
+plot(0:N_test-1, sin_stop_test, 'b', 0:N_test-1, y_stop_dir, 'r', 'LineWidth', 1);
+grid on;
+title('Реакция на синусоиду в ПОЛОСЕ НЕПРОПУСКАНИЯ (800 Гц) - прямая форма');
+xlabel('n'); ylabel('Амплитуда');
+legend('Вход', 'Выход');
+
+% Вывод расхождений между формами
+fprintf('\n=== Расхождения между формами реализации ===\n');
+fprintf('Прямая vs Каноническая: max = %e\n', max(abs(y_imp_dir - y_imp_can)));
+fprintf('Прямая vs Последовательная: max = %e\n', max(abs(y_imp_dir - y_imp_ser)));
+fprintf('Прямая vs Параллельная: max = %e\n', max(abs(y_imp_dir - y_imp_par)));
+
+disp('Программа успешно выполнена.');
